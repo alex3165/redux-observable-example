@@ -1,9 +1,12 @@
-import { createEpicMiddleware, combineEpics } from 'redux-observable';
-import { createStore, applyMiddleware } from 'redux';
 import 'rxjs';
-import { ajax } from 'rxjs/observable/dom/ajax';
-import fetch from 'isomorphic-fetch';
-import { fromJS } from 'immutable';
+import { createEpicMiddleware, combineEpics } from 'redux-observable';
+import { createStore, applyMiddleware, bindActionCreators } from 'redux';
+import { Observable } from 'rxjs/Observable';
+import { getLocations, getVenues } from './request';
+import Immutable, { fromJS } from 'immutable';
+import InstallDevtools from 'immutable-devtools';
+
+InstallDevtools(Immutable);
 
 // Default values / constants
 const [ ADD_LOCATION, ADD_VENUE, SELECT_LOCATION, FETCH_LOCATION, FETCH_VENUE ] = ['ADD_LOCATION', 'ADD_VENUE', 'SELECT_LOCATION', 'FETCH_LOCATION', 'FETCH_VENUE'];
@@ -14,26 +17,27 @@ const initialState = fromJS({
 });
 
 // Actions
-const fetchLocations = (query) => ({
+const fetchLocations = query => ({
   type: FETCH_LOCATION,
   payload: query
 });
 
-const fetchVenues = () => ({
-  type: FETCH_VENUE
+const fetchVenues = ll => ({
+  type: FETCH_VENUE,
+  payload: ll
 })
 
-const addLocations = (locations) => ({
+const addLocations = locations => ({
   type: ADD_LOCATION,
   payload: locations
 });
 
-const selectLocation = (locationId) => ({
+const selectLocation = locationId => ({
   type: SELECT_LOCATION,
   payload: locationId
 });
 
-const addVenues = (venues) => ({
+const addVenues = venues => ({
   type: ADD_VENUE,
   payload: venues
 });
@@ -42,10 +46,22 @@ const addVenues = (venues) => ({
 // Epics
 function locationsEpic(action$) {
   return action$
+    .ofType(FETCH_LOCATION)
+    .map(action => action.payload)
+    .switchMap((query) =>
+      getLocations(query)
+        .map(addLocations)
+    )
 }
 
 function venuesEpic(action$) {
-  return action$;
+  return action$
+    .ofType(FETCH_VENUE)
+    .map(action => action.payload)
+    .switchMap(ll =>
+      getVenues(ll)
+        .map(addVenues)
+    )
 }
 
 // Redux / Middleware config
@@ -73,33 +89,35 @@ const reducer = (state, action) => {
   }
 }
 
-const { dispatch, subscribe, getState } = createStore(
+const store = createStore(
   reducer,
   initialState,
   applyMiddleware(epicMiddleware)
-)
+);
 
-subscribe(() => {
-  const state = getState();
-  console.log(state);
-});
+// Logic supposed to be in the view
+const { dispatch } = store;
+const selectLoc = bindActionCreators(selectLocation, dispatch);
+const fetchLoc = bindActionCreators(fetchLocations, dispatch);
+const fetchV = bindActionCreators(fetchVenues, dispatch);
 
-// dispatch(fetchLocations);
+fetchLoc('se137fj');
 
-
-/*
- - Auto-complete (debouncing ...)
-*/
-
-// Requests
-const getLocations = (postcode) => (
-ajax
-  .getJSON(`https://api.mapbox.com/geocoding/v5/mapbox.places/${postcode}.json?access_token=pk.eyJ1IjoiYWxleDMxNjUiLCJhIjoiYWZ2b0ctdyJ9.8hDqOD5GlLfBfIxjHaa0qQ`)
-  .map(res => fromJS(res.features))
-)
-
-const getVenues = (ll) => (
-ajax
-  .getJSON(`https://api.foursquare.com/v2/venues/search`)
-  .map(res => fromJS(res))
-)
+// Emulate user actions
+const storeObs = Observable.from(store)
+  .filter(state => state.get('locations').size >= 1)
+  .take(1)
+  .map(state => state.get('locations'))
+  .do(locations => {
+    selectLoc(locations.first().get('id'));
+  })
+  .withLatestFrom(
+    Observable
+      .from(store)
+      .map(state => state.get('selectedLocationId'))
+  )
+  .do(([ locations, selectedLocationId ]) => {
+    // console.log(locations, selectedLocationId)
+    fetchV(locations.getIn([ selectedLocationId, 'center' ]).join(','))
+  })
+  .subscribe();
