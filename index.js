@@ -4,9 +4,6 @@ import { createStore, applyMiddleware, bindActionCreators } from 'redux';
 import { Observable } from 'rxjs/Observable';
 import { getLocations, getVenues } from './request';
 import Immutable, { fromJS } from 'immutable';
-import InstallDevtools from 'immutable-devtools';
-
-InstallDevtools(Immutable);
 
 // Default values / constants
 const [ ADD_LOCATION, ADD_VENUE, SELECT_LOCATION, FETCH_LOCATION, FETCH_VENUE ] = ['ADD_LOCATION', 'ADD_VENUE', 'SELECT_LOCATION', 'FETCH_LOCATION', 'FETCH_VENUE'];
@@ -117,7 +114,10 @@ const storeObs = Observable.from(store)
       .map(state => state.get('selectedLocationId'))
   )
   .do(([ locations, selectedLocationId ]) => {
-    // console.log(locations, selectedLocationId)
-    fetchV(locations.getIn([ selectedLocationId, 'center' ]).join(','))
+    fetchV(locations.getIn([ selectedLocationId, 'center' ]).reverse().join(','))
   })
   .subscribe();
+
+Observable.from(store).do(state => {
+  console.log(state.toJS());
+}).subscribe();

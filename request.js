@@ -10,8 +10,13 @@ ajax
   .map(res => fromJS(res.features))
 )
 
-export const getVenues = (ll, query) => (
+export const getVenues = ll => (
 ajax
-  .getJSON(`https://api.foursquare.com/v2/venues/search?ll=${ll}&client_id=ZWZL2ECVQUGANU4URFLSESP1U3YP3NMTJPJ1QN4U3HQH1WKR&client_secret=001FNYSHSPYL4V1I5XNCOWYELO3DEGVOAJVC10ZK0VPC3CX5&v=20160925`)
-  .map(res => fromJS(res))
+  .getJSON(`http://localhost:8080/api/foursquareLocations/search-location?location=${ll}`)
+  .map(res =>
+    fromJS(res)
+      .get('response')
+      .first()
+      .get('venues')
+  )
 )
