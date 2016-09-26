@@ -1,9 +1,12 @@
 import 'rxjs';
+import React from 'react';
+import { render } from "react-dom";
 import { createEpicMiddleware, combineEpics } from 'redux-observable';
 import { createStore, applyMiddleware, bindActionCreators } from 'redux';
 import { Observable } from 'rxjs/Observable';
 import { getLocations, getVenues } from './request';
 import Immutable, { fromJS } from 'immutable';
+import Main from './main';
 
 // Default values / constants
 const [ ADD_LOCATION, ADD_VENUE, SELECT_LOCATION, FETCH_LOCATION, FETCH_VENUE ] = ['ADD_LOCATION', 'ADD_VENUE', 'SELECT_LOCATION', 'FETCH_LOCATION', 'FETCH_VENUE'];
@@ -91,16 +94,14 @@ const store = createStore(
   initialState,
   applyMiddleware(epicMiddleware)
 );
-
-// Logic supposed to be in the view
 const { dispatch } = store;
 const selectLoc = bindActionCreators(selectLocation, dispatch);
 const fetchLoc = bindActionCreators(fetchLocations, dispatch);
 const fetchV = bindActionCreators(fetchVenues, dispatch);
 
-fetchLoc('se137fj');
+// Automated user actions !!
 
-// Emulate user actions
+// // Emulate user actions
 const storeObs = Observable.from(store)
   .filter(state => state.get('locations').size >= 1)
   .take(1)
@@ -121,3 +122,15 @@ const storeObs = Observable.from(store)
 Observable.from(store).do(state => {
   console.log(state.toJS());
 }).subscribe();
+
+
+// User UI
+const onChangeAddress = evt => {
+  const { value } = evt.target;
+
+  if (value.length > 6) {
+    fetchLoc(value);
+  }
+};
+
+render(<Main onChangeAddress={onChangeAddress}/>, document.getElementById('content'));
