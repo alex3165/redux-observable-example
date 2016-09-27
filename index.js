@@ -5,11 +5,12 @@ import { createEpicMiddleware, combineEpics } from 'redux-observable';
 import { createStore, applyMiddleware, bindActionCreators } from 'redux';
 import { Observable } from 'rxjs/Observable';
 import { getLocations, getVenues } from './request';
-import Immutable, { fromJS } from 'immutable';
+import { fromJS, Map } from 'immutable';
 import Main from './main';
-
+import { Provider } from 'react-redux';
+import { ADD_LOCATION, ADD_VENUE, SET_LOCATION, FETCH_LOCATION, FETCH_VENUE, SELECT_LOCATION } from './constants';
 // Default values / constants
-const [ ADD_LOCATION, ADD_VENUE, SELECT_LOCATION, FETCH_LOCATION, FETCH_VENUE ] = ['ADD_LOCATION', 'ADD_VENUE', 'SELECT_LOCATION', 'FETCH_LOCATION', 'FETCH_VENUE'];
+// const [ ADD_LOCATION, ADD_VENUE, SELECT_LOCATION, FETCH_LOCATION, FETCH_VENUE ] = ['ADD_LOCATION', 'ADD_VENUE', 'SELECT_LOCATION', 'FETCH_LOCATION', 'FETCH_VENUE'];
 const initialState = fromJS({
   locations: {},
   venues: {},
@@ -17,24 +18,9 @@ const initialState = fromJS({
 });
 
 // Actions
-const fetchLocations = query => ({
-  type: FETCH_LOCATION,
-  payload: query
-});
-
-const fetchVenues = ll => ({
-  type: FETCH_VENUE,
-  payload: ll
-})
-
 const addLocations = locations => ({
   type: ADD_LOCATION,
   payload: locations
-});
-
-const selectLocation = locationId => ({
-  type: SELECT_LOCATION,
-  payload: locationId
 });
 
 const addVenues = venues => ({
@@ -42,27 +28,54 @@ const addVenues = venues => ({
   payload: venues
 });
 
+const setLocation = id => ({
+  type: SET_LOCATION,
+  payload: id
+});
+
+// Utility
+const defaultConfig = { retryCount: 2, delay: 500 };
+
+function retry(operation, { retryCount, delay } = defaultConfig) {
+  return Observable
+    .interval(delay)
+    .flatMap(() =>
+      operation
+    )
+    .retry(retryCount)
+    .take(1)
+}
 
 // Epics
-function locationsEpic(action$) {
+const locationsEpic = (action$) => {
   return action$
     .ofType(FETCH_LOCATION)
     .map(action => action.payload)
+    .filter(query => query.length > 2)
     .switchMap((query) =>
       getLocations(query)
         .map(addLocations)
     )
 }
 
-function venuesEpic(action$) {
-  return action$
-    .ofType(FETCH_VENUE)
-    .map(action => action.payload)
-    .switchMap(ll =>
-      getVenues(ll)
-        .map(addVenues)
+const selectLocations = state => state.get('locations')
+
+const venuesEpic = (action$, store) => action$
+  .ofType(SELECT_LOCATION)
+  .map(({ payload }) => selectLocations(store.getState()).get(payload))
+  .switchMap(location => Observable
+    .merge(
+      Observable.of(setLocation(location.get('id'))),
+      retry(
+        getVenues(
+          location.get('center').reverse().join(',')
+        ).map(addVenues)
+      )
+      .catch(() => {
+        console.error("Couldn't complete your request");
+      })
     )
-}
+  );
 
 // Redux / Middleware config
 const epicMiddleware = createEpicMiddleware(combineEpics(locationsEpic, venuesEpic));
@@ -71,19 +84,15 @@ const reducer = (state, action) => {
 
   switch(type) {
     case ADD_LOCATION:
-      return state.update('locations', (locations) => (
-        locations.merge(
-          payload.reduce((acc, location) => acc.set(location.get('id'), location), new Map())
-        )
-      ));
-    case SELECT_LOCATION:
+      return state
+        .set('locations', payload.reduce((acc, location) => acc.set(location.get('id'), location), new Map()))
+        .set('venues', new Map());
+    case SET_LOCATION:
       return state.set('selectedLocationId', payload);
     case ADD_VENUE:
-      return state.update('venues', (venues) => (
-        venues.merge(
-          payload.reduce((acc, venue) => acc.set(venue.get('id'), venue), new Map())
-        )
-      ));
+      return state.set('venues',
+        payload.reduce((acc, venue) => acc.set(venue.get('id'), venue), new Map())
+      );
     default:
       return state;
   }
@@ -94,43 +103,20 @@ const store = createStore(
   initialState,
   applyMiddleware(epicMiddleware)
 );
-const { dispatch } = store;
-const selectLoc = bindActionCreators(selectLocation, dispatch);
-const fetchLoc = bindActionCreators(fetchLocations, dispatch);
-const fetchV = bindActionCreators(fetchVenues, dispatch);
 
-// Automated user actions !!
-
-// // Emulate user actions
-const storeObs = Observable.from(store)
-  .filter(state => state.get('locations').size >= 1)
-  .take(1)
-  .map(state => state.get('locations'))
-  .do(locations => {
-    selectLoc(locations.first().get('id'));
-  })
-  .withLatestFrom(
-    Observable
-      .from(store)
-      .map(state => state.get('selectedLocationId'))
-  )
-  .do(([ locations, selectedLocationId ]) => {
-    fetchV(locations.getIn([ selectedLocationId, 'center' ]).reverse().join(','))
-  })
+Observable
+  .from(store)
+  .do(state => console.log(state))
   .subscribe();
 
-Observable.from(store).do(state => {
-  console.log(state.toJS());
-}).subscribe();
-
-
 // User UI
-const onChangeAddress = evt => {
-  const { value } = evt.target;
+const content = (
+  <Provider store={store}>
+    <Main/>
+  </Provider>
+)
 
-  if (value.length > 6) {
-    fetchLoc(value);
-  }
-};
-
-render(<Main onChangeAddress={onChangeAddress}/>, document.getElementById('content'));
+render(
+  content,
+  document.getElementById('content')
+);
